@@ -114,6 +114,24 @@ func Test_Query(t *testing.T) {
 	utils.AssertEqual(t, "123456789", tea.StringValue(result["num"]))
 }
 
+func Test_QueryWithNilRepeatedParam(t *testing.T) {
+	filter := map[string]interface{}{
+		"strs": []interface{}{"str1", nil, "", "str4"},
+	}
+
+	result := Query(filter)
+	utils.AssertEqual(t, "str1", tea.StringValue(result["strs.1"]))
+	if _, ok := result["strs.2"]; ok {
+		t.Fatal("nil repeated parameter should be omitted")
+	}
+	empty, ok := result["strs.3"]
+	if !ok {
+		t.Fatal("empty string repeated parameter should be retained")
+	}
+	utils.AssertEqual(t, "", tea.StringValue(empty))
+	utils.AssertEqual(t, "str4", tea.StringValue(result["strs.4"]))
+}
+
 func Test_flatRepeatedList(t *testing.T) {
 	filter := map[string]interface{}{
 		"client":  "test",

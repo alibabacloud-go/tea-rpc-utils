@@ -142,6 +142,9 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 			elementValue := repeatedFieldValue.Index(m)
 			key := prefix + "." + strconv.Itoa(m+1)
 			fieldValue := reflect.ValueOf(elementValue.Interface())
+			if !fieldValue.IsValid() {
+				continue
+			}
 			if fieldValue.Kind().String() == "map" {
 				handleMap(fieldValue, result, key)
 			} else {
