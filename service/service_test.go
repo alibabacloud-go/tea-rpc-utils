@@ -114,6 +114,46 @@ func Test_Query(t *testing.T) {
 	utils.AssertEqual(t, "123456789", tea.StringValue(result["num"]))
 }
 
+func Test_Query_NilListElement(t *testing.T) {
+	// Terraform plugin-sdk may surface empty string list items as nil.
+	filter := map[string]interface{}{
+		"CaCertificateIds": []interface{}{nil, "cert-xxx"},
+	}
+	result := Query(filter)
+	utils.AssertEqual(t, "", tea.StringValue(result["CaCertificateIds.1"]))
+	utils.AssertEqual(t, "cert-xxx", tea.StringValue(result["CaCertificateIds.2"]))
+}
+
+func Test_Query_EmptyStringListElement(t *testing.T) {
+	filter := map[string]interface{}{
+		"CaCertificateIds": []interface{}{"", "cert-xxx"},
+	}
+	result := Query(filter)
+	utils.AssertEqual(t, "", tea.StringValue(result["CaCertificateIds.1"]))
+	utils.AssertEqual(t, "cert-xxx", tea.StringValue(result["CaCertificateIds.2"]))
+}
+
+func Test_Query_AllNilListElements(t *testing.T) {
+	filter := map[string]interface{}{
+		"Ids": []interface{}{nil, nil},
+	}
+	result := Query(filter)
+	utils.AssertEqual(t, "", tea.StringValue(result["Ids.1"]))
+	utils.AssertEqual(t, "", tea.StringValue(result["Ids.2"]))
+}
+
+func Test_isNilRepeatedElement(t *testing.T) {
+	var nilIface interface{}
+	utils.AssertEqual(t, true, isNilRepeatedElement(reflect.ValueOf(nilIface)))
+	utils.AssertEqual(t, true, isNilRepeatedElement(reflect.Value{}))
+	utils.AssertEqual(t, false, isNilRepeatedElement(reflect.ValueOf("")))
+	utils.AssertEqual(t, false, isNilRepeatedElement(reflect.ValueOf("cert")))
+	var nilPtr *string
+	utils.AssertEqual(t, true, isNilRepeatedElement(reflect.ValueOf(nilPtr)))
+	s := "x"
+	utils.AssertEqual(t, false, isNilRepeatedElement(reflect.ValueOf(&s)))
+}
+
 func Test_flatRepeatedList(t *testing.T) {
 	filter := map[string]interface{}{
 		"client":  "test",

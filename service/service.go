@@ -141,6 +141,12 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 		for m := 0; m < repeatedFieldValue.Len(); m++ {
 			elementValue := repeatedFieldValue.Index(m)
 			key := prefix + "." + strconv.Itoa(m+1)
+			// Nil interface/pointer elements (e.g. Terraform plugin-sdk reads "" as nil)
+			// must serialize as empty string and keep index, matching tea-rpc-util TS.
+			if isNilRepeatedElement(elementValue) {
+				result[key] = tea.String("")
+				continue
+			}
 			fieldValue := reflect.ValueOf(elementValue.Interface())
 			if fieldValue.Kind().String() == "map" {
 				handleMap(fieldValue, result, key)
@@ -148,6 +154,18 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 				result[key] = tea.String(fmt.Sprintf("%v", fieldValue.Interface()))
 			}
 		}
+	}
+}
+
+func isNilRepeatedElement(elementValue reflect.Value) bool {
+	if !elementValue.IsValid() {
+		return true
+	}
+	switch elementValue.Kind() {
+	case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return elementValue.IsNil()
+	default:
+		return false
 	}
 }
 
