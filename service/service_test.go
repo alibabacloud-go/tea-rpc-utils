@@ -115,12 +115,13 @@ func Test_Query(t *testing.T) {
 }
 
 func Test_Query_NilListElement(t *testing.T) {
-	// Terraform plugin-sdk may surface empty string list items as nil.
+	// Nil slot = omitted; keep later indices (may be sparse), do not panic.
 	filter := map[string]interface{}{
 		"CaCertificateIds": []interface{}{nil, "cert-xxx"},
 	}
 	result := Query(filter)
-	utils.AssertEqual(t, "", tea.StringValue(result["CaCertificateIds.1"]))
+	_, has1 := result["CaCertificateIds.1"]
+	utils.AssertEqual(t, false, has1)
 	utils.AssertEqual(t, "cert-xxx", tea.StringValue(result["CaCertificateIds.2"]))
 }
 
@@ -138,8 +139,10 @@ func Test_Query_AllNilListElements(t *testing.T) {
 		"Ids": []interface{}{nil, nil},
 	}
 	result := Query(filter)
-	utils.AssertEqual(t, "", tea.StringValue(result["Ids.1"]))
-	utils.AssertEqual(t, "", tea.StringValue(result["Ids.2"]))
+	_, has1 := result["Ids.1"]
+	_, has2 := result["Ids.2"]
+	utils.AssertEqual(t, false, has1)
+	utils.AssertEqual(t, false, has2)
 }
 
 func Test_isNilRepeatedElement(t *testing.T) {

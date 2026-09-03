@@ -141,10 +141,9 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 		for m := 0; m < repeatedFieldValue.Len(); m++ {
 			elementValue := repeatedFieldValue.Index(m)
 			key := prefix + "." + strconv.Itoa(m+1)
-			// Nil interface/pointer elements (e.g. Terraform plugin-sdk reads "" as nil)
-			// must serialize as empty string and keep index, matching tea-rpc-util TS.
+			// Nil interface/pointer elements mean the slot is omitted (caller default).
+			// Skip writing the key; do not coerce to empty string.
 			if isNilRepeatedElement(elementValue) {
-				result[key] = tea.String("")
 				continue
 			}
 			fieldValue := reflect.ValueOf(elementValue.Interface())
