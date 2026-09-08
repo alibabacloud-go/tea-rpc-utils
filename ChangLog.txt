@@ -1,3 +1,7 @@
+2026-09-08 Version: v1.1.3
+- Add QueryWithError to return serialization errors for nil repeated parameter elements.
+- Deprecate Query in favor of QueryWithError.
+
 2020-10-29 Version: v1.1.2
 - Fix unmarshal error.
 
