@@ -114,23 +114,21 @@ func Test_Query(t *testing.T) {
 	utils.AssertEqual(t, "123456789", tea.StringValue(result["num"]))
 }
 
-func Test_QueryPreservesLegacyNilRepeatedParamPanic(t *testing.T) {
-	defer func() {
-		if recovered := recover(); recovered == nil {
-			t.Fatal("Query should preserve its legacy panic for a nil repeated parameter")
-		}
-	}()
-
+func Test_QueryWithErrorMatchesQueryForNonNilParameters(t *testing.T) {
 	filter := map[string]interface{}{
-		"strs": []interface{}{"str1", nil, "", "str4"},
-	}
-	Query(filter)
-}
-
-func Test_QueryWithError(t *testing.T) {
-	filter := map[string]interface{}{
-		"client": "test",
-		"strs":   []interface{}{"str1", "", "str3"},
+		"client":  "test",
+		"enabled": false,
+		"number":  int64(9223372036854775807),
+		"tag": map[string]interface{}{
+			"key": "value",
+		},
+		"strs": []interface{}{"str1", "", "str3"},
+		"listeners": []interface{}{
+			map[string]interface{}{
+				"Enabled": true,
+				"Port":    443,
+			},
+		},
 	}
 
 	result, err := QueryWithError(filter)
@@ -142,28 +140,104 @@ func Test_QueryWithError(t *testing.T) {
 		t.Fatalf("QueryWithError result differs from Query: got %#v, want %#v", result, legacyResult)
 	}
 	utils.AssertEqual(t, "test", tea.StringValue(result["client"]))
+	utils.AssertEqual(t, "false", tea.StringValue(result["enabled"]))
+	utils.AssertEqual(t, "9223372036854775807", tea.StringValue(result["number"]))
+	utils.AssertEqual(t, "value", tea.StringValue(result["tag.key"]))
 	utils.AssertEqual(t, "str1", tea.StringValue(result["strs.1"]))
 	utils.AssertEqual(t, "", tea.StringValue(result["strs.2"]))
 	utils.AssertEqual(t, "str3", tea.StringValue(result["strs.3"]))
+	utils.AssertEqual(t, "true", tea.StringValue(result["listeners.1.Enabled"]))
+	utils.AssertEqual(t, "443", tea.StringValue(result["listeners.1.Port"]))
 }
 
 func Test_QueryWithErrorRejectsNilRepeatedParam(t *testing.T) {
-	filter := map[string]interface{}{
-		"Listeners": []interface{}{
-			map[string]interface{}{
-				"CertificateIds": []interface{}{"cert-1", nil},
+	tests := []struct {
+		name       string
+		filter     map[string]interface{}
+		wantErrMsg string
+	}{
+		{
+			name: "top-level repeated parameter",
+			filter: map[string]interface{}{
+				"CaCertificateIds": []interface{}{nil, "cert-1"},
 			},
+			wantErrMsg: `cannot serialize repeated parameter element "CaCertificateIds.1": value is nil`,
+		},
+		{
+			name: "nested repeated parameter",
+			filter: map[string]interface{}{
+				"Listeners": []interface{}{
+					map[string]interface{}{
+						"CertificateIds": []interface{}{"cert-1", nil},
+					},
+				},
+			},
+			wantErrMsg: `cannot serialize repeated parameter element "Listeners.1.CertificateIds.2": value is nil`,
+		},
+		{
+			name: "typed nil string pointer",
+			filter: map[string]interface{}{
+				"CertificateIds": []*string{tea.String("cert-1"), nil},
+			},
+			wantErrMsg: `cannot serialize repeated parameter element "CertificateIds.2": value is nil`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := QueryWithError(tt.filter)
+			if err == nil {
+				t.Fatal("QueryWithError should reject a nil repeated parameter")
+			}
+			if result != nil {
+				t.Fatal("QueryWithError should not return partial query parameters on error")
+			}
+			utils.AssertEqual(t, tt.wantErrMsg, err.Error())
+		})
+	}
+}
+
+func Test_QueryWithErrorAllowsUnsetParameters(t *testing.T) {
+	filter := map[string]interface{}{
+		"unset":    nil,
+		"nilSlice": []string(nil),
+		"nested": map[string]interface{}{
+			"unset": nil,
+			"value": "ok",
 		},
 	}
 
 	result, err := QueryWithError(filter)
+	if err != nil {
+		t.Fatalf("QueryWithError returned an unexpected error for unset parameters: %v", err)
+	}
+	if _, ok := result["unset"]; ok {
+		t.Fatal("unset parameter should be omitted")
+	}
+	if _, ok := result["nilSlice"]; ok {
+		t.Fatal("nil slice parameter should be omitted")
+	}
+	if _, ok := result["nested.unset"]; ok {
+		t.Fatal("nested unset parameter should be omitted")
+	}
+	utils.AssertEqual(t, "ok", tea.StringValue(result["nested.value"]))
+}
+
+func Test_QueryWithErrorReturnsMarshalError(t *testing.T) {
+	filter := map[string]interface{}{
+		"unsupported": make(chan int),
+	}
+
+	result, err := QueryWithError(filter)
 	if err == nil {
-		t.Fatal("QueryWithError should reject a nil repeated parameter")
+		t.Fatal("QueryWithError should return a JSON marshal error for an unsupported value")
 	}
 	if result != nil {
-		t.Fatal("QueryWithError should not return partial query parameters on error")
+		t.Fatal("QueryWithError should not return query parameters after a marshal error")
 	}
-	utils.AssertEqual(t, `repeated parameter "Listeners.1.CertificateIds.2" must not be nil`, err.Error())
+	if !strings.HasPrefix(err.Error(), "marshal query parameters: ") {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
 }
 
 func Test_flatRepeatedList(t *testing.T) {

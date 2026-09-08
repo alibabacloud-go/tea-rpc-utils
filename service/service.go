@@ -101,9 +101,6 @@ func HasError(body map[string]interface{}) *bool {
 	return tea.Bool(false)
 }
 
-// Query flattens query parameters using the legacy behavior.
-//
-// Deprecated: use QueryWithError to receive errors for invalid repeated parameters.
 func Query(filter map[string]interface{}) map[string]*string {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
@@ -120,7 +117,7 @@ func Query(filter map[string]interface{}) map[string]*string {
 	return result
 }
 
-// QueryWithError flattens query parameters and returns an error instead of encoding a nil element in a repeated parameter.
+// QueryWithError flattens query parameters and returns an error when the input cannot be serialized.
 func QueryWithError(filter map[string]interface{}) (map[string]*string, error) {
 	tmp := make(map[string]interface{})
 	byt, err := json.Marshal(filter)
@@ -149,23 +146,30 @@ func GetHost(product *string, regionid *string, endpoint *string) *string {
 }
 
 func flatRepeatedList(dataValue reflect.Value, result map[string]*string, prefix string) {
-	_ = flatRepeatedListMode(dataValue, result, prefix, false)
+	if !dataValue.IsValid() {
+		return
+	}
+
+	dataType := dataValue.Type()
+	if dataType.Kind().String() == "slice" {
+		handleRepeatedParams(dataValue, result, prefix)
+	} else if dataType.Kind().String() == "map" {
+		handleMap(dataValue, result, prefix)
+	} else {
+		result[prefix] = tea.String(fmt.Sprintf("%v", dataValue.Interface()))
+	}
 }
 
 func flatRepeatedListWithError(dataValue reflect.Value, result map[string]*string, prefix string) error {
-	return flatRepeatedListMode(dataValue, result, prefix, true)
-}
-
-func flatRepeatedListMode(dataValue reflect.Value, result map[string]*string, prefix string, rejectNil bool) error {
 	if !dataValue.IsValid() {
 		return nil
 	}
 
 	dataType := dataValue.Type()
 	if dataType.Kind().String() == "slice" {
-		return handleRepeatedParams(dataValue, result, prefix, rejectNil)
+		return handleRepeatedParamsWithError(dataValue, result, prefix)
 	} else if dataType.Kind().String() == "map" {
-		return handleMap(dataValue, result, prefix, rejectNil)
+		return handleMapWithError(dataValue, result, prefix)
 	} else {
 		result[prefix] = tea.String(fmt.Sprintf("%v", dataValue.Interface()))
 	}
@@ -173,19 +177,32 @@ func flatRepeatedListMode(dataValue reflect.Value, result map[string]*string, pr
 	return nil
 }
 
-func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*string, prefix string, rejectNil bool) error {
+func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*string, prefix string) {
+	if repeatedFieldValue.IsValid() && !repeatedFieldValue.IsNil() {
+		for m := 0; m < repeatedFieldValue.Len(); m++ {
+			elementValue := repeatedFieldValue.Index(m)
+			key := prefix + "." + strconv.Itoa(m+1)
+			fieldValue := reflect.ValueOf(elementValue.Interface())
+			if fieldValue.Kind().String() == "map" {
+				handleMap(fieldValue, result, key)
+			} else {
+				result[key] = tea.String(fmt.Sprintf("%v", fieldValue.Interface()))
+			}
+		}
+	}
+}
+
+func handleRepeatedParamsWithError(repeatedFieldValue reflect.Value, result map[string]*string, prefix string) error {
 	if repeatedFieldValue.IsValid() && !repeatedFieldValue.IsNil() {
 		for m := 0; m < repeatedFieldValue.Len(); m++ {
 			elementValue := repeatedFieldValue.Index(m)
 			key := prefix + "." + strconv.Itoa(m+1)
 			fieldValue := reflect.ValueOf(elementValue.Interface())
 			if !fieldValue.IsValid() {
-				if rejectNil {
-					return fmt.Errorf("repeated parameter %q must not be nil", key)
-				}
+				return fmt.Errorf("cannot serialize repeated parameter element %q: value is nil", key)
 			}
 			if fieldValue.Kind().String() == "map" {
-				if err := handleMap(fieldValue, result, key, rejectNil); err != nil {
+				if err := handleMapWithError(fieldValue, result, key); err != nil {
 					return err
 				}
 			} else {
@@ -197,7 +214,7 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 	return nil
 }
 
-func handleMap(valueField reflect.Value, result map[string]*string, prefix string, rejectNil bool) error {
+func handleMap(valueField reflect.Value, result map[string]*string, prefix string) {
 	if valueField.IsValid() && valueField.String() != "" {
 		valueFieldType := valueField.Type()
 		if valueFieldType.Kind().String() == "map" {
@@ -215,7 +232,35 @@ func handleMap(valueField reflect.Value, result map[string]*string, prefix strin
 					pre = key
 				}
 				fieldValue := reflect.ValueOf(value)
-				if err := flatRepeatedListMode(fieldValue, result, pre, rejectNil); err != nil {
+				flatRepeatedList(fieldValue, result, pre)
+			}
+		}
+	}
+}
+
+func handleMapWithError(valueField reflect.Value, result map[string]*string, prefix string) error {
+	if valueField.IsValid() && valueField.String() != "" {
+		valueFieldType := valueField.Type()
+		if valueFieldType.Kind().String() == "map" {
+			byt, err := json.Marshal(valueField.Interface())
+			if err != nil {
+				return fmt.Errorf("marshal query parameter %q: %w", prefix, err)
+			}
+			cache := make(map[string]interface{})
+			d := json.NewDecoder(bytes.NewReader(byt))
+			d.UseNumber()
+			if err = d.Decode(&cache); err != nil {
+				return fmt.Errorf("decode query parameter %q: %w", prefix, err)
+			}
+			for key, value := range cache {
+				pre := ""
+				if prefix != "" {
+					pre = prefix + "." + key
+				} else {
+					pre = key
+				}
+				fieldValue := reflect.ValueOf(value)
+				if err = flatRepeatedListWithError(fieldValue, result, pre); err != nil {
 					return err
 				}
 			}
