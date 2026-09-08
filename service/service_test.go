@@ -114,22 +114,56 @@ func Test_Query(t *testing.T) {
 	utils.AssertEqual(t, "123456789", tea.StringValue(result["num"]))
 }
 
-func Test_QueryWithNilRepeatedParam(t *testing.T) {
+func Test_QueryPreservesLegacyNilRepeatedParamPanic(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("Query should preserve its legacy panic for a nil repeated parameter")
+		}
+	}()
+
 	filter := map[string]interface{}{
 		"strs": []interface{}{"str1", nil, "", "str4"},
 	}
+	Query(filter)
+}
 
-	result := Query(filter)
+func Test_QueryWithError(t *testing.T) {
+	filter := map[string]interface{}{
+		"client": "test",
+		"strs":   []interface{}{"str1", "", "str3"},
+	}
+
+	result, err := QueryWithError(filter)
+	if err != nil {
+		t.Fatalf("QueryWithError returned an unexpected error: %v", err)
+	}
+	legacyResult := Query(filter)
+	if !reflect.DeepEqual(legacyResult, result) {
+		t.Fatalf("QueryWithError result differs from Query: got %#v, want %#v", result, legacyResult)
+	}
+	utils.AssertEqual(t, "test", tea.StringValue(result["client"]))
 	utils.AssertEqual(t, "str1", tea.StringValue(result["strs.1"]))
-	if _, ok := result["strs.2"]; ok {
-		t.Fatal("nil repeated parameter should be omitted")
+	utils.AssertEqual(t, "", tea.StringValue(result["strs.2"]))
+	utils.AssertEqual(t, "str3", tea.StringValue(result["strs.3"]))
+}
+
+func Test_QueryWithErrorRejectsNilRepeatedParam(t *testing.T) {
+	filter := map[string]interface{}{
+		"Listeners": []interface{}{
+			map[string]interface{}{
+				"CertificateIds": []interface{}{"cert-1", nil},
+			},
+		},
 	}
-	empty, ok := result["strs.3"]
-	if !ok {
-		t.Fatal("empty string repeated parameter should be retained")
+
+	result, err := QueryWithError(filter)
+	if err == nil {
+		t.Fatal("QueryWithError should reject a nil repeated parameter")
 	}
-	utils.AssertEqual(t, "", tea.StringValue(empty))
-	utils.AssertEqual(t, "str4", tea.StringValue(result["strs.4"]))
+	if result != nil {
+		t.Fatal("QueryWithError should not return partial query parameters on error")
+	}
+	utils.AssertEqual(t, `repeated parameter "Listeners.1.CertificateIds.2" must not be nil`, err.Error())
 }
 
 func Test_flatRepeatedList(t *testing.T) {
