@@ -103,7 +103,7 @@ func HasError(body map[string]interface{}) *bool {
 
 // Query flattens query parameters.
 //
-// Deprecated: use QueryWithError to receive serialization errors.
+// Deprecated: use QueryWithError to receive errors for nil repeated parameter elements.
 func Query(filter map[string]interface{}) map[string]*string {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
@@ -120,23 +120,18 @@ func Query(filter map[string]interface{}) map[string]*string {
 	return result
 }
 
-// QueryWithError flattens query parameters and returns an error when the input cannot be serialized.
+// QueryWithError flattens query parameters and returns an error for nil repeated parameter elements.
 func QueryWithError(filter map[string]interface{}) (map[string]*string, error) {
 	tmp := make(map[string]interface{})
-	byt, err := json.Marshal(filter)
-	if err != nil {
-		return nil, fmt.Errorf("marshal query parameters: %w", err)
-	}
+	byt, _ := json.Marshal(filter)
 	d := json.NewDecoder(bytes.NewReader(byt))
 	d.UseNumber()
-	if err = d.Decode(&tmp); err != nil {
-		return nil, fmt.Errorf("decode query parameters: %w", err)
-	}
+	_ = d.Decode(&tmp)
 
 	result := make(map[string]*string)
 	for key, value := range tmp {
 		filterValue := reflect.ValueOf(value)
-		if err = flatRepeatedListWithError(filterValue, result, key); err != nil {
+		if err := flatRepeatedListWithError(filterValue, result, key); err != nil {
 			return nil, err
 		}
 	}
@@ -245,16 +240,12 @@ func handleMapWithError(valueField reflect.Value, result map[string]*string, pre
 	if valueField.IsValid() && valueField.String() != "" {
 		valueFieldType := valueField.Type()
 		if valueFieldType.Kind().String() == "map" {
-			byt, err := json.Marshal(valueField.Interface())
-			if err != nil {
-				return fmt.Errorf("marshal query parameter %q: %w", prefix, err)
-			}
+			var byt []byte
+			byt, _ = json.Marshal(valueField.Interface())
 			cache := make(map[string]interface{})
 			d := json.NewDecoder(bytes.NewReader(byt))
 			d.UseNumber()
-			if err = d.Decode(&cache); err != nil {
-				return fmt.Errorf("decode query parameter %q: %w", prefix, err)
-			}
+			_ = d.Decode(&cache)
 			for key, value := range cache {
 				pre := ""
 				if prefix != "" {
@@ -263,7 +254,7 @@ func handleMapWithError(valueField reflect.Value, result map[string]*string, pre
 					pre = key
 				}
 				fieldValue := reflect.ValueOf(value)
-				if err = flatRepeatedListWithError(fieldValue, result, pre); err != nil {
+				if err := flatRepeatedListWithError(fieldValue, result, pre); err != nil {
 					return err
 				}
 			}

@@ -223,20 +223,18 @@ func Test_QueryWithErrorAllowsUnsetParameters(t *testing.T) {
 	utils.AssertEqual(t, "ok", tea.StringValue(result["nested.value"]))
 }
 
-func Test_QueryWithErrorReturnsMarshalError(t *testing.T) {
+func Test_QueryWithErrorPreservesLegacyMarshalFailureBehavior(t *testing.T) {
 	filter := map[string]interface{}{
 		"unsupported": make(chan int),
 	}
 
+	legacyResult := Query(filter)
 	result, err := QueryWithError(filter)
-	if err == nil {
-		t.Fatal("QueryWithError should return a JSON marshal error for an unsupported value")
+	if err != nil {
+		t.Fatalf("QueryWithError changed the legacy marshal failure into an error: %v", err)
 	}
-	if result != nil {
-		t.Fatal("QueryWithError should not return query parameters after a marshal error")
-	}
-	if !strings.HasPrefix(err.Error(), "marshal query parameters: ") {
-		t.Fatalf("unexpected marshal error: %v", err)
+	if !reflect.DeepEqual(legacyResult, result) {
+		t.Fatalf("QueryWithError result differs from Query after a marshal failure: got %#v, want %#v", result, legacyResult)
 	}
 }
 
