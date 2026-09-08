@@ -114,7 +114,7 @@ func Test_Query(t *testing.T) {
 	utils.AssertEqual(t, "123456789", tea.StringValue(result["num"]))
 }
 
-func Test_QueryWithErrorMatchesQueryForNonNilParameters(t *testing.T) {
+func Test_FlattenParamsMatchesQueryForNonNilParameters(t *testing.T) {
 	filter := map[string]interface{}{
 		"client":  "test",
 		"enabled": false,
@@ -131,13 +131,13 @@ func Test_QueryWithErrorMatchesQueryForNonNilParameters(t *testing.T) {
 		},
 	}
 
-	result, err := QueryWithError(filter)
+	result, err := FlattenParams(filter)
 	if err != nil {
-		t.Fatalf("QueryWithError returned an unexpected error: %v", err)
+		t.Fatalf("FlattenParams returned an unexpected error: %v", err)
 	}
 	legacyResult := Query(filter)
 	if !reflect.DeepEqual(legacyResult, result) {
-		t.Fatalf("QueryWithError result differs from Query: got %#v, want %#v", result, legacyResult)
+		t.Fatalf("FlattenParams result differs from Query: got %#v, want %#v", result, legacyResult)
 	}
 	utils.AssertEqual(t, "test", tea.StringValue(result["client"]))
 	utils.AssertEqual(t, "false", tea.StringValue(result["enabled"]))
@@ -150,7 +150,7 @@ func Test_QueryWithErrorMatchesQueryForNonNilParameters(t *testing.T) {
 	utils.AssertEqual(t, "443", tea.StringValue(result["listeners.1.Port"]))
 }
 
-func Test_QueryWithErrorRejectsNilRepeatedParam(t *testing.T) {
+func Test_FlattenParamsRejectsNilRepeatedParam(t *testing.T) {
 	tests := []struct {
 		name       string
 		filter     map[string]interface{}
@@ -185,19 +185,19 @@ func Test_QueryWithErrorRejectsNilRepeatedParam(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := QueryWithError(tt.filter)
+			result, err := FlattenParams(tt.filter)
 			if err == nil {
-				t.Fatal("QueryWithError should reject a nil repeated parameter")
+				t.Fatal("FlattenParams should reject a nil repeated parameter")
 			}
 			if result != nil {
-				t.Fatal("QueryWithError should not return partial query parameters on error")
+				t.Fatal("FlattenParams should not return partial RPC parameters on error")
 			}
 			utils.AssertEqual(t, tt.wantErrMsg, err.Error())
 		})
 	}
 }
 
-func Test_QueryWithErrorAllowsUnsetParameters(t *testing.T) {
+func Test_FlattenParamsAllowsUnsetParameters(t *testing.T) {
 	filter := map[string]interface{}{
 		"unset":    nil,
 		"nilSlice": []string(nil),
@@ -207,9 +207,9 @@ func Test_QueryWithErrorAllowsUnsetParameters(t *testing.T) {
 		},
 	}
 
-	result, err := QueryWithError(filter)
+	result, err := FlattenParams(filter)
 	if err != nil {
-		t.Fatalf("QueryWithError returned an unexpected error for unset parameters: %v", err)
+		t.Fatalf("FlattenParams returned an unexpected error for unset parameters: %v", err)
 	}
 	if _, ok := result["unset"]; ok {
 		t.Fatal("unset parameter should be omitted")
@@ -223,18 +223,18 @@ func Test_QueryWithErrorAllowsUnsetParameters(t *testing.T) {
 	utils.AssertEqual(t, "ok", tea.StringValue(result["nested.value"]))
 }
 
-func Test_QueryWithErrorPreservesLegacyMarshalFailureBehavior(t *testing.T) {
+func Test_FlattenParamsPreservesLegacyMarshalFailureBehavior(t *testing.T) {
 	filter := map[string]interface{}{
 		"unsupported": make(chan int),
 	}
 
 	legacyResult := Query(filter)
-	result, err := QueryWithError(filter)
+	result, err := FlattenParams(filter)
 	if err != nil {
-		t.Fatalf("QueryWithError changed the legacy marshal failure into an error: %v", err)
+		t.Fatalf("FlattenParams changed the legacy marshal failure into an error: %v", err)
 	}
 	if !reflect.DeepEqual(legacyResult, result) {
-		t.Fatalf("QueryWithError result differs from Query after a marshal failure: got %#v, want %#v", result, legacyResult)
+		t.Fatalf("FlattenParams result differs from Query after a marshal failure: got %#v, want %#v", result, legacyResult)
 	}
 }
 

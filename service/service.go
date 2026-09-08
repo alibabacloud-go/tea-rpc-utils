@@ -103,7 +103,7 @@ func HasError(body map[string]interface{}) *bool {
 
 // Query flattens query parameters.
 //
-// Deprecated: use QueryWithError to receive errors for nil repeated parameter elements.
+// Deprecated: use FlattenParams to receive errors for nil repeated parameter elements.
 func Query(filter map[string]interface{}) map[string]*string {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
@@ -120,8 +120,8 @@ func Query(filter map[string]interface{}) map[string]*string {
 	return result
 }
 
-// QueryWithError flattens query parameters and returns an error for nil repeated parameter elements.
-func QueryWithError(filter map[string]interface{}) (map[string]*string, error) {
+// FlattenParams flattens RPC parameters and returns an error for nil repeated parameter elements.
+func FlattenParams(filter map[string]interface{}) (map[string]*string, error) {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
 	d := json.NewDecoder(bytes.NewReader(byt))
