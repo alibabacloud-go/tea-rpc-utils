@@ -101,6 +101,9 @@ func HasError(body map[string]interface{}) *bool {
 	return tea.Bool(false)
 }
 
+// Query flattens query parameters.
+//
+// Deprecated: use QueryWithError to receive serialization errors.
 func Query(filter map[string]interface{}) map[string]*string {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
