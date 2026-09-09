@@ -101,6 +101,9 @@ func HasError(body map[string]interface{}) *bool {
 	return tea.Bool(false)
 }
 
+// Query flattens query parameters.
+//
+// Deprecated: use FlattenParams to receive errors for nil repeated parameter elements.
 func Query(filter map[string]interface{}) map[string]*string {
 	tmp := make(map[string]interface{})
 	byt, _ := json.Marshal(filter)
@@ -115,6 +118,25 @@ func Query(filter map[string]interface{}) map[string]*string {
 	}
 
 	return result
+}
+
+// FlattenParams flattens RPC parameters and returns an error for nil repeated parameter elements.
+func FlattenParams(filter map[string]interface{}) (map[string]*string, error) {
+	tmp := make(map[string]interface{})
+	byt, _ := json.Marshal(filter)
+	d := json.NewDecoder(bytes.NewReader(byt))
+	d.UseNumber()
+	_ = d.Decode(&tmp)
+
+	result := make(map[string]*string)
+	for key, value := range tmp {
+		filterValue := reflect.ValueOf(value)
+		if err := flatRepeatedListWithError(filterValue, result, key); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
 }
 
 func GetHost(product *string, regionid *string, endpoint *string) *string {
@@ -136,6 +158,23 @@ func flatRepeatedList(dataValue reflect.Value, result map[string]*string, prefix
 	}
 }
 
+func flatRepeatedListWithError(dataValue reflect.Value, result map[string]*string, prefix string) error {
+	if !dataValue.IsValid() {
+		return nil
+	}
+
+	dataType := dataValue.Type()
+	if dataType.Kind().String() == "slice" {
+		return handleRepeatedParamsWithError(dataValue, result, prefix)
+	} else if dataType.Kind().String() == "map" {
+		return handleMapWithError(dataValue, result, prefix)
+	} else {
+		result[prefix] = tea.String(fmt.Sprintf("%v", dataValue.Interface()))
+	}
+
+	return nil
+}
+
 func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*string, prefix string) {
 	if repeatedFieldValue.IsValid() && !repeatedFieldValue.IsNil() {
 		for m := 0; m < repeatedFieldValue.Len(); m++ {
@@ -149,6 +188,28 @@ func handleRepeatedParams(repeatedFieldValue reflect.Value, result map[string]*s
 			}
 		}
 	}
+}
+
+func handleRepeatedParamsWithError(repeatedFieldValue reflect.Value, result map[string]*string, prefix string) error {
+	if repeatedFieldValue.IsValid() && !repeatedFieldValue.IsNil() {
+		for m := 0; m < repeatedFieldValue.Len(); m++ {
+			elementValue := repeatedFieldValue.Index(m)
+			key := prefix + "." + strconv.Itoa(m+1)
+			fieldValue := reflect.ValueOf(elementValue.Interface())
+			if !fieldValue.IsValid() {
+				return fmt.Errorf("cannot serialize repeated parameter element %q: value is nil", key)
+			}
+			if fieldValue.Kind().String() == "map" {
+				if err := handleMapWithError(fieldValue, result, key); err != nil {
+					return err
+				}
+			} else {
+				result[key] = tea.String(fmt.Sprintf("%v", fieldValue.Interface()))
+			}
+		}
+	}
+
+	return nil
 }
 
 func handleMap(valueField reflect.Value, result map[string]*string, prefix string) {
@@ -173,6 +234,34 @@ func handleMap(valueField reflect.Value, result map[string]*string, prefix strin
 			}
 		}
 	}
+}
+
+func handleMapWithError(valueField reflect.Value, result map[string]*string, prefix string) error {
+	if valueField.IsValid() && valueField.String() != "" {
+		valueFieldType := valueField.Type()
+		if valueFieldType.Kind().String() == "map" {
+			var byt []byte
+			byt, _ = json.Marshal(valueField.Interface())
+			cache := make(map[string]interface{})
+			d := json.NewDecoder(bytes.NewReader(byt))
+			d.UseNumber()
+			_ = d.Decode(&cache)
+			for key, value := range cache {
+				pre := ""
+				if prefix != "" {
+					pre = prefix + "." + key
+				} else {
+					pre = key
+				}
+				fieldValue := reflect.ValueOf(value)
+				if err := flatRepeatedListWithError(fieldValue, result, pre); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func sign(stringToSign, accessKeySecret, secretSuffix string) string {
