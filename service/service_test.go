@@ -99,6 +99,7 @@ func Test_HasError(t *testing.T) {
 func Test_Query(t *testing.T) {
 	filter := map[string]interface{}{
 		"client": "test",
+		"empty":  "",
 		"tag": map[string]string{
 			"key": "value",
 		},
@@ -108,6 +109,7 @@ func Test_Query(t *testing.T) {
 
 	result := Query(filter)
 	utils.AssertEqual(t, "test", tea.StringValue(result["client"]))
+	utils.AssertEqual(t, "", tea.StringValue(result["empty"]))
 	utils.AssertEqual(t, "value", tea.StringValue(result["tag.key"]))
 	utils.AssertEqual(t, "str1", tea.StringValue(result["strs.1"]))
 	utils.AssertEqual(t, "str2", tea.StringValue(result["strs.2"]))
